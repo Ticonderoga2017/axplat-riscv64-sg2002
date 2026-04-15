@@ -1,0 +1,157 @@
+# Architecture identifier.
+arch = "riscv64"                           # str
+# Platform identifier.
+platform = "sg2002"                        # str
+# Platform package.
+package = "axplat-riscv64-sg2002"          # str
+
+#
+# Platform configs
+#
+[plat]
+# Number of CPUs.
+cpu-num = 1                                     # uint
+
+# Base address of the whole physical memory.
+phys-memory-base = 0x8000_0000                  # uint
+
+# Size of the whole physical memory. (254Mb)
+phys-memory-size = 0xFE00000                    # uint
+
+# Base physical address of the kernel image (bootloader loads at 0x80200000).
+kernel-base-paddr = 0x8020_0000                 # uint
+
+# Base virtual address of the kernel image.
+kernel-base-vaddr = "0xffff_ffc0_8020_0000"     # uint
+
+# Linear mapping offset, for quick conversions between physical and virtual
+# addresses.
+phys-virt-offset = "0xffff_ffc0_0000_0000"      # uint
+
+# Offset of bus address and phys address. some boards, the bus address is
+# different from the physical address.
+phys-bus-offset = 0                             # uint
+
+# Kernel address space base.
+kernel-aspace-base = "0xffff_ffc0_0000_0000"    # uint
+# Kernel address space size.
+kernel-aspace-size = "0x0000_003f_ffff_f000"    # uint
+
+# Stack size on bootstrapping. (256K)
+boot-stack-size = 0x40000                       # uint
+
+#
+# Device specifications
+#
+
+[devices]
+
+# MMIO ranges with format (`base_paddr`, `size`).
+mmio-ranges = [[0x0, 0x8000_0000]]  # [(uint, uint)]
+
+# VirtIO MMIO ranges with format (`base_paddr`, `size`).
+virtio-mmio-ranges = []             # [(uint, uint)]
+
+
+
+# Base physical address of the PCIe ECAM space.
+pci-ecam-base = 0x2b00_0000         # uint
+
+# End PCI bus number.
+pci-bus-end = 0xff                  # uint
+
+# PCI device memory ranges.
+pci-ranges = []                     # [(uint, uint)]
+
+
+
+# Timer interrupt frequency in Hz.
+timer-frequency = 4_000_000         # uint
+
+# Timer interrupt num.
+timer-irq = "0x8000_0000_0000_0005" # uint
+
+# IPI interrupt num
+ipi-irq = "0x8000_0000_0000_0001"   # uint
+
+
+# SG2002 / CV181x RTC
+# rtc {
+#     compatible = "cvitek,rtc";
+#     reg = <0x00 0x5026000 0x00 0x1000 0x00 0x5025000 0x00 0x1000>;
+#     clocks = <0x02 0x10>;
+#     clock-names = "clk_rtc";
+#     interrupts = <0x11 0x04>;
+#     interrupt-parent = <0x04>;
+# };
+rtc-paddr = 0x05026000            # uint
+
+
+# sg2002 / Interrupt
+# interrupt-controller@70000000 {
+#     riscv,ndev = <0x65>;
+#     riscv,max-priority = <0x07>;
+#     reg-names = "control";
+#     reg = <0x00 0x7000_0000 0x00 0x4000000>;
+#     interrupts-extended = <0x13 0xffffffff 0x13 0x09>;
+#     interrupt-controller;
+#     compatible = "riscv,plic0";
+#     #interrupt-cells = <0x02>;
+#     #address-cells = <0x00>;
+#     phandle = <0x04>;
+# };
+plic-paddr = 0x7000_0000            # uint
+
+
+# serial@04140000 {
+# 	compatible = "snps,dw-apb-uart";
+# 	reg = <0x00 0x4140000 0x00 0x1000>;
+# 	reg-shift = <0x02>;
+# 	reg-io-width = <0x04>;
+# 	status = "okay";
+# 	interrupts = <0x2c 0x04>;
+# 	interrupt-parent = <0x04>;
+# 	clocks = <0x02 0x36>;
+# };
+uart-paddr = 0x0414_0000            # uint
+uart-irq = 0x2c                     # uint
+
+
+# cv-sd@4310000 {
+#     compatible = "cvitek,cv181x-sd";
+#     reg = <0x00 0x4310000 0x00 0x1000>;
+#     reg-names = "core_mem";
+#     bus-width = <0x04>;
+#     cap-sd-highspeed;
+#     cap-mmc-highspeed;
+#     sd-uhs-sdr12;
+#     sd-uhs-sdr25;
+#     sd-uhs-sdr50;
+#     sd-uhs-sdr104;
+#     no-sdio;
+#     no-mmc;
+#     src-frequency = <0x165a0bc0>;
+#     min-frequency = <0x61a80>;
+#     max-frequency = <0x17d7840>;
+#     64_addressing;
+#     reset_tx_rx_phy;
+#     reset-names = "sdhci";
+#     pll_index = <0x06>;
+#     pll_reg = <0x3002070>;
+#     cvi-cd-gpios = <0x08 0x0d 0x01>;
+#     interrupts = <0x24 0x04>;
+#     interrupt-parent = <0x04>;
+#     no-1-8-v;
+# };
+sdmmc-paddr = 0x0431_0000           # uint
+
+# WiFi SDIO1 controller (AIC8800, RTC 域)  
+# Master C906 中断表: INT #38 = SD1  
+sdio1-paddr = 0x0432_0000          # uint  
+sdio1-irq = 38                     # uint  
+
+# SoC 子系统基址 (用于 SDIO1 硬件初始化)
+crg-paddr = 0x0300_2000          # Clock Reset Generator
+sysctrl-paddr = 0x0300_0000      # System Control (TOP_MISC)
+rtcsys-ctrl-paddr = 0x0502_5000  # RTC subsystem control
+rtcsys-io-paddr = 0x0502_7000    # RTC subsystem IO (pinmux)
