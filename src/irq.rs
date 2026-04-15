@@ -13,12 +13,29 @@ use riscv::register::sie;
 use riscv_plic::Plic;
 use sbi_rt::HartMask;
 
+use crate::config::devices::{PLIC_PADDR, UART_PADDR};
 use crate::config::plat::PHYS_VIRT_OFFSET;
 
 const _: () = assert!(PHYS_VIRT_OFFSET != 0);
 
 /// 内核线性映射下 PLIC 的虚拟地址（enable/claim/complete 用此 VA，避免 riscv_plic 内 32 位基址导致 LoadFault）。
-const PLIC_KERNEL_VA: usize = 0xffff_ffc0_0000_0000_usize + 0x7000_0000_usize;
+const PLIC_KERNEL_VA: usize = PHYS_VIRT_OFFSET + PLIC_PADDR;
+
+/// IER::ERBFI bit（Enable Receive Buffer Full Interrupt）  
+const IER_ERBFI: u32 = 0x01;
+const UART_BASE_VA: usize = PHYS_VIRT_OFFSET + UART_PADDR;
+const UART_IER_VA: usize = UART_BASE_VA + 0x04; // IER (stride=4, reg index 1)  
+const UART_IIR_VA: usize = UART_BASE_VA + 0x08; // IIR (stride=4, reg index 2)  
+pub(crate) const UART_LSR_VA: usize = UART_BASE_VA + 0x14; // LSR (stride=4, reg index 5)  
+pub(crate) const UART_USR_VA: usize = UART_BASE_VA + 0x7C; // USR (stride=4, reg index 31)  
+
+/// DW-APB-UART IIR Interrupt ID（bits [3:0]）  
+const IIR_BUSY_DETECT: u32 = 0x07; // Busy Detect (DW-APB-UART 特有)  
+const IIR_RX_DATA_AVAILABLE: u32 = 0x04; // Received Data Available  
+const IIR_CHARACTER_TIMEOUT: u32 = 0x0C; // Character Timeout Indication  
+const IIR_RECEIVER_LINE_STATUS: u32 = 0x06; // Receiver Line Status  
+const IIR_THR_EMPTY: u32 = 0x02; // THR Empty  
+const IIR_MODEM_STATUS: u32 = 0x00; // Modem Status
 
 /// 与 OpenSBI plic_cold_irqchip_init 一致：仅写 priority 区（首访 0x0）。不读 enable 区：该 SoC 上 enable 区 (0x70002100+) 读也会 LoadFault。
 fn plic_cold_init_once() {
@@ -51,19 +68,22 @@ pub const MAX_IRQ_COUNT: usize = 1024;
 
 static IRQ_HANDLER_TABLE: HandlerTable<MAX_IRQ_COUNT> = HandlerTable::new();
 
-static PLIC: SpinNoIrq<Plic> = SpinNoIrq::new(unsafe {
-    Plic::new(NonNull::new(PLIC_KERNEL_VA as *mut _).unwrap())
-});
+static PLIC: SpinNoIrq<Plic> =
+    SpinNoIrq::new(unsafe { Plic::new(NonNull::new(PLIC_KERNEL_VA as *mut _).unwrap()) });
 
 fn this_context() -> usize {
-    let hart_id = this_cpu_id() + 1;
-    // hart 0 missing S-mode
-    hart_id * 2 // supervisor context
+    // let hart_id = this_cpu_id() + 1;
+    // // hart 0 missing S-mode
+    // hart_id * 2 // supervisor context
+
+    // SG2002 DTS: interrupts-extended = <0x13 0xffffffff 0x13 0x09>
+    // Context 0 = M-mode (disabled), Context 1 = S-mode
+    1
 }
 
 /// Context 2 (S-mode) enable 区 shadow：不读 PLIC enable（该 SoC 读会 LoadFault），只写。
 /// 布局：base + 0x2000 + context*0x80，每字 32 source；4 字覆盖 128 source（DTS ndev=101）。
-const PLIC_CTX2_ENABLE_OFFSET: usize = 0x2000 + 2 * 0x80; // 0x2100
+const PLIC_CTX1_ENABLE_OFFSET: usize = 0x2000 + 1 * 0x80; // 0x2100
 const PLIC_ENABLE_WORDS: usize = 4;
 static ENABLE_SHADOW: SpinNoIrq<[u32; PLIC_ENABLE_WORDS]> = SpinNoIrq::new([0; PLIC_ENABLE_WORDS]);
 
@@ -82,23 +102,23 @@ fn plic_enable_disable_raw(irq: u32, enabled: bool) {
     }
     let val = shadow[word_idx];
     drop(shadow);
-    let ptr = (PLIC_KERNEL_VA + PLIC_CTX2_ENABLE_OFFSET + word_idx * 4) as *mut u32;
+    let ptr = (PLIC_KERNEL_VA + PLIC_CTX1_ENABLE_OFFSET + word_idx * 4) as *mut u32;
     unsafe { core::ptr::write_volatile(ptr, val) };
 }
 
 /// Context 2 claim/complete 偏移：PLIC 规范 base + 0x200000 + context*0x1000。
-const PLIC_CTX2_CLAIM_COMPLETE_OFFSET: usize = 0x200000 + 2 * 0x1000; // 0x202000
+const PLIC_CTX1_CLAIM_COMPLETE_OFFSET: usize = 0x200000 + 1 * 0x1000 + 4; // 0x202004
 
 /// 用 PLIC_KERNEL_VA 读 claim，避免 riscv_plic 截断基址在首次外设中断时 LoadFault。
 fn plic_claim_raw() -> Option<NonZeroU32> {
-    let ptr = (PLIC_KERNEL_VA + PLIC_CTX2_CLAIM_COMPLETE_OFFSET) as *const u32;
+    let ptr = (PLIC_KERNEL_VA + PLIC_CTX1_CLAIM_COMPLETE_OFFSET) as *const u32;
     let id = unsafe { core::ptr::read_volatile(ptr) };
     NonZeroU32::new(id)
 }
 
 /// 用 PLIC_KERNEL_VA 写 complete。
 fn plic_complete_raw(irq: NonZeroU32) {
-    let ptr = (PLIC_KERNEL_VA + PLIC_CTX2_CLAIM_COMPLETE_OFFSET) as *mut u32;
+    let ptr = (PLIC_KERNEL_VA + PLIC_CTX1_CLAIM_COMPLETE_OFFSET) as *mut u32;
     unsafe { core::ptr::write_volatile(ptr, irq.get()) };
 }
 
@@ -138,6 +158,57 @@ macro_rules! with_cause {
             }
         }
     };
+}
+
+/// 裸写使能/禁用 UART RX 中断。ISR 中调用，不持锁。
+pub(crate) fn uart_enable_disable_rx_irq_raw(enable: bool) {
+    let ptr = UART_IER_VA as *mut u32;
+    unsafe {
+        let val = core::ptr::read_volatile(ptr);
+        let shadow = if enable == true {
+            val | IER_ERBFI
+        } else {
+            val & !IER_ERBFI
+        };
+        core::ptr::write_volatile(ptr, shadow);
+    }
+}
+
+/// ISR 中调用：处理所有 UART 中断源，禁用 ERBFI。不持锁、不做日志。
+pub(crate) fn uart_handle_irq() {
+    unsafe {
+        // 1. 读 IIR 确定中断类型（同时清 THRE 中断）
+        let iir = core::ptr::read_volatile(UART_IIR_VA as *const u32) & 0x0F;
+
+        match iir {
+            IIR_BUSY_DETECT => {
+                // Busy Detect: 读 USR 清除
+                core::ptr::read_volatile(UART_USR_VA as *const u32);
+            }
+            IIR_RX_DATA_AVAILABLE | IIR_CHARACTER_TIMEOUT => {
+                // RX Data Available (0x04) 或 Character Timeout (0x0C)
+                // 禁用 ERBFI，让 tty-reader 线程在 read_bytes 中重新使能
+                let ier = core::ptr::read_volatile(UART_IER_VA as *const u32);
+                core::ptr::write_volatile(UART_IER_VA as *mut u32, ier & !IER_ERBFI);
+            }
+            IIR_RECEIVER_LINE_STATUS => {
+                // Receiver Line Status: 读 LSR 清除
+                core::ptr::read_volatile(UART_LSR_VA as *const u32);
+            }
+            _ => {
+                // 未知/no interrupt pending (bit0=1): 读 USR 兜底
+                let _ = core::ptr::read_volatile(UART_USR_VA as *const u32);
+            }
+        }
+    }
+}
+
+/// 在 read_bytes 中调用：重新使能 ERBFI  
+pub(crate) fn uart_enable_erbfi() {
+    unsafe {
+        let ier = core::ptr::read_volatile(UART_IER_VA as *const u32);
+        core::ptr::write_volatile(UART_IER_VA as *mut u32, ier | IER_ERBFI);
+    }
 }
 
 struct IrqIfImpl;
@@ -271,6 +342,12 @@ impl IrqIf for IrqIfImpl {
                     debug!("Spurious external IRQ");
                     return None;
                 };
+                // 对 UART 等电平触发中断源：dispatch 前先禁用硬件中断源，
+                // 防止 plic_complete 后中断立即重新触发。
+                #[cfg(feature = "irq")]
+                if irq.get() == crate::config::devices::UART_IRQ as u32 {
+                    uart_enable_disable_rx_irq_raw(false);
+                }
                 trace!("IRQ: external {irq}");
                 IRQ_HANDLER_TABLE.handle(irq.get() as usize);
                 plic_complete_raw(irq);

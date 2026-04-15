@@ -6,7 +6,10 @@ use kspin::SpinNoIrq;
 use lazyinit::LazyInit;
 use uart_16550::MmioSerialPort;
 
-use crate::config::devices::UART_PADDR;
+use crate::{
+    config::devices::UART_PADDR,
+    irq::{UART_LSR_VA, UART_USR_VA, uart_enable_erbfi},
+};
 
 static UART: LazyInit<SpinNoIrq<MmioSerialPort>> = LazyInit::new();
 
@@ -17,6 +20,13 @@ pub(crate) fn init_early() {
         // uart.init();
         SpinNoIrq::new(uart)
     });
+    // 清理 DW-APB-UART 残留中断状态
+    unsafe {
+        core::ptr::read_volatile(UART_USR_VA as *const u32); // 读 USR 
+        core::ptr::read_volatile(UART_LSR_VA as *const u32); // 读 IIR
+    }
+    // 使能 ERBFI，使得后续 PLIC enable IRQ 44 后 UART 能产生 RX 中断
+    uart_enable_erbfi();
 }
 
 struct ConsoleIfImpl;
@@ -44,16 +54,22 @@ impl ConsoleIf for ConsoleIfImpl {
         for (i, byte) in bytes.iter_mut().enumerate() {
             match uart.try_receive() {
                 Ok(c) => *byte = c,
-                Err(_) => return i,
+                Err(_) => {
+                    // 读完所有数据后，重新使能 ERBFI
+                    drop(uart);
+                    uart_enable_erbfi();
+                    return i;
+                }
             }
         }
+        drop(uart);
+        uart_enable_erbfi();
         bytes.len()
     }
 
     /// Returns the IRQ number for the console, if applicable.
     #[cfg(feature = "irq")]
     fn irq_num() -> Option<usize> {
-        // Some(crate::config::devices::UART_IRQ)
-        None
+        Some(crate::config::devices::UART_IRQ)
     }
 }

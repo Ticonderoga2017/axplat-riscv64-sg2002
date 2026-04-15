@@ -34,13 +34,11 @@ unsafe fn init_mmu() {
     }
 }
 
-
 #[unsafe(naked)]
 unsafe extern "C" fn early_tests() {
     core::arch::naked_asm!(
         // UART base address
         "li t0, 0x4140000",
-
         // 输出 'Boot\r\n'
         "li t1, 'B'",
         "sb t1, 0(t0)",
@@ -50,11 +48,10 @@ unsafe extern "C" fn early_tests() {
         "sb t1, 0(t0)",
         "li t1, 't'",
         "sb t1, 0(t0)",
-        "li t1, 0x0d",   // '\r'
+        "li t1, 0x0d", // '\r'
         "sb t1, 0(t0)",
-        "li t1, 0x0a",   // '\n'
+        "li t1, 0x0a", // '\n'
         "sb t1, 0(t0)",
-
         "ret",
     );
 }
