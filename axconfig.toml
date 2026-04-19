@@ -150,7 +150,7 @@ sdmmc-paddr = 0x0431_0000           # uint
 sdio1-paddr = 0x0432_0000          # uint  
 sdio1-irq = 38                     # uint  
 
-# SoC 子系统基址 (用于 SDIO1 硬件初始化)
+# SoC subsystem base addresses (for SDIO1 hardware init)
 crg-paddr = 0x0300_2000            # uint
 sysctrl-paddr = 0x0300_0000        # uint
 rtcsys-ctrl-paddr = 0x0502_5000    # uint

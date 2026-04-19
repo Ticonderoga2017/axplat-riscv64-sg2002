@@ -9,7 +9,7 @@ mod boot;
 mod console;
 mod init;
 #[cfg(feature = "irq")]
-mod irq;
+pub mod irq;
 mod mem;
 mod power;
 mod time;

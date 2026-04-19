@@ -13,10 +13,18 @@ use riscv::register::sie;
 use riscv_plic::Plic;
 use sbi_rt::HartMask;
 
-use crate::config::devices::{PLIC_PADDR, UART_PADDR};
+use crate::config::devices::{PLIC_PADDR, SDIO1_IRQ, UART_PADDR};
 use crate::config::plat::PHYS_VIRT_OFFSET;
 
 const _: () = assert!(PHYS_VIRT_OFFSET != 0);
+
+/// 注册 SDIO1 (IRQ#38) 中断处理函数到 PLIC
+///
+/// 必须在 `sdio.init()` 之前调用，使 IRQ 驱动等待在 init 阶段正常工作。
+/// 返回 `true` 表示注册成功。
+pub fn register_sdio1_irq(handler: fn()) -> bool {
+    axplat::irq::register(SDIO1_IRQ, handler)
+}
 
 /// 内核线性映射下 PLIC 的虚拟地址（enable/claim/complete 用此 VA，避免 riscv_plic 内 32 位基址导致 LoadFault）。
 const PLIC_KERNEL_VA: usize = PHYS_VIRT_OFFSET + PLIC_PADDR;
